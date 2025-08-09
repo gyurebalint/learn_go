@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -51,11 +52,27 @@ func (t *NormalTruck) UnloadCargo() error {
 	return nil
 }
 
-func processTruck(truck Truck) error {
+type contextKey string
+
+var UserIdKey contextKey = "userID"
+
+func processTruck(ctx context.Context, truck Truck) error {
 	fmt.Printf("processing truck %+v\n", truck)
 
-	//simulate some processing time
-	time.Sleep(time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*2)
+	defer cancel()
+
+	//simulate long-running task
+	delay := time.Second * 3
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(delay):
+		break
+	}
+
+	userID := ctx.Value(UserIdKey)
+	log.Println(userID)
 
 	if err := truck.LoadCargo(); err != nil {
 		return fmt.Errorf("error loading cargo: %w", err)
@@ -68,26 +85,42 @@ func processTruck(truck Truck) error {
 	return nil
 }
 
-func processFleet(trucks []Truck) error {
+func processFleet(ctx context.Context, trucks []Truck) error {
 	var wg sync.WaitGroup
+	errorChannel := make(chan error, len(trucks))
 
 	for _, t := range trucks {
 		wg.Add(1)
 
 		go func(t Truck) {
-			err := processTruck(t)
-			if err != nil {
-				log.Println(err)
+			if err := processTruck(ctx, t); err != nil {
+
+				errorChannel <- err
 			}
 			wg.Done()
 		}(t)
 	}
 	wg.Wait()
+	close(errorChannel)
+
+	var errs []error
+	for err := range errorChannel {
+		log.Printf("error processing truck %+v\n", err)
+		errs = append(errs, err)
+	}
+
+	if len(errs) > 0 {
+
+		return fmt.Errorf("fleet processing had %d errors", len(errs))
+	}
 
 	return nil
 }
 
 func main() {
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, UserIdKey, 42)
+
 	fleet := []Truck{
 		&ElectricTruck{id: "ET1", cargo: 0, battery: 100},
 		&NormalTruck{id: "NT1", cargo: 0},
@@ -111,7 +144,7 @@ func main() {
 		&NormalTruck{id: "NT2", cargo: 0},
 	}
 
-	if err := processFleet(fleet); err != nil {
+	if err := processFleet(ctx, fleet); err != nil {
 		fmt.Printf("error processing fleet: %v\n", err)
 		return
 	}
@@ -120,18 +153,18 @@ func main() {
 }
 
 /*func main() {
-	nt := &NormalTruck{id: "NormalTruck1"}
-	err := processTruck(nt)
-	if err != nil {
-		log.Fatalf("error processing truck: %s\n", err)
-	}
+    nt := &NormalTruck{id: "NormalTruck1"}
+    err := processTruck(nt)
+    if err != nil {
+       log.Fatalf("error processing truck: %s\n", err)
+    }
 
-	et := &ElectricTruck{id: "ElectricTruck1"}
-	err = processTruck(et)
-	if err != nil {
-		log.Fatalf("Error processing truck: %s", err)
-	}
+    et := &ElectricTruck{id: "ElectricTruck1"}
+    err = processTruck(et)
+    if err != nil {
+       log.Fatalf("Error processing truck: %s", err)
+    }
 
-	log.Println(nt.cargo)
-	log.Println(et.battery)
+    log.Println(nt.cargo)
+    log.Println(et.battery)
 }*/
