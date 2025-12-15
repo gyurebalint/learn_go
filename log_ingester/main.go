@@ -10,7 +10,9 @@ import (
 	"log_ingester/internal/storage"
 	_ "modernc.org/sqlite"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -34,8 +36,8 @@ func main() {
 	defer dest.Close()
 
 	//Init ctx
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
-	defer cancel()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	ch := make(chan models.Person)
 	errCh := make(chan error)
@@ -52,11 +54,12 @@ func main() {
 	}()
 
 	//listener
-	for range 3 {
+	for range 1 {
 		workerGroup.Add(1)
 		go func() {
 			defer workerGroup.Done()
 			for p := range ch {
+				time.Sleep(500 * time.Millisecond)
 				if err := dest.Save(ctx, p); err != nil {
 					errCh <- err
 				} else {
@@ -75,6 +78,9 @@ func main() {
 	}
 
 	for dec.More() {
+		if ctx.Err() != nil {
+			break
+		}
 		var p models.Person
 		if err := dec.Decode(&p); err != nil {
 			log.Println("error decoding person from data", err)
