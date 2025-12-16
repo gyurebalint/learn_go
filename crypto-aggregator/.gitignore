@@ -1,0 +1,9 @@
+# Docker Volume Data
+pgdata/
+
+# IDE settings (Optional but recommended)
+.idea/
+
+# Binaries
+crypto-aggregator.exe
+crypto-aggregator
