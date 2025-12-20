@@ -20,8 +20,9 @@ func main() {
 		panic(err)
 	}
 
-	f := &fetcher.BinanceFetcher{}
-	serv := service.NewPriceService(db, f)
+	binFetcher := &fetcher.BinanceFetcher{}
+	kucoinFetcher := &fetcher.KucoinFetcher{}
+	serv := service.NewPriceService(db, []fetcher.Fetcher{binFetcher, kucoinFetcher})
 
 	http.HandleFunc("/price", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("GET params were:", r.URL.Query())

@@ -35,7 +35,7 @@ func (s *PriceService) GetPrice(ctx context.Context, symbol string) (float64, er
 		}
 
 		validFetcherCount += 1
-		_ = append(exchanges, resp.Exchange)
+		exchanges = append(exchanges, resp.Exchange)
 		prices += resp.Price
 	}
 
