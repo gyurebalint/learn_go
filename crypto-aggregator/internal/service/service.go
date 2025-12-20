@@ -4,33 +4,48 @@ import (
 	"context"
 	"crypto-aggregator/internal/fetcher"
 	"crypto-aggregator/internal/store"
+	"strings"
 	"time"
 )
 
 type PriceService struct {
-	db      store.Storage
-	fetcher fetcher.Fetcher
+	db       store.Storage
+	fetchers []fetcher.Fetcher
 }
 
-func NewPriceService(db store.Storage, f fetcher.Fetcher) *PriceService {
+func NewPriceService(db store.Storage, f []fetcher.Fetcher) *PriceService {
 	return &PriceService{
-		db:      db,
-		fetcher: f,
+		db:       db,
+		fetchers: f,
 	}
 }
 
 func (s *PriceService) GetPrice(ctx context.Context, symbol string) (float64, error) {
-	priceValue, err := s.fetcher.Fetch(ctx, symbol)
-	if err != nil {
-		return 0, err
+	var exchanges []string
+	var prices float64
+	var validFetcherCount int
+
+	for i := range s.fetchers {
+		resp, err := s.fetchers[i].Fetch(ctx, symbol)
+		if err != nil {
+			continue
+		}
+		if resp.Price == 0 {
+			continue
+		}
+
+		validFetcherCount += 1
+		_ = append(exchanges, resp.Exchange)
+		prices += resp.Price
 	}
 
+	avg := prices / (float64(len(s.fetchers)))
 	price := store.Price{
-		Exchange:  "BINANCE",
-		Value:     priceValue,
+		Exchange:  strings.Join(exchanges, ","),
+		Value:     avg,
 		Currency:  symbol,
 		TimeStamp: time.Now()}
-	err = s.db.SavePrice(ctx, []store.Price{price})
+	err := s.db.SavePrice(ctx, []store.Price{price})
 	if err != nil {
 		return 0, err
 	}
