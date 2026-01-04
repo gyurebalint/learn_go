@@ -14,32 +14,41 @@ A containerized Go service that fetches cryptocurrency prices and persists them 
 - **Infrastructure:** Docker, Docker Compose
 
 ## Quick Start (Docker Compose)
-The easiest way to run the full stack (App + Database) is using Docker Compose:
+Run the full stack (App + Database) with one command:
 
 ```bash
 docker-compose up --build
 ```
-This will initialize the PostgreSQL database and start the aggregator service on `localhost:8080`.
 
-[Image of Docker Compose architecture for microservices]
+
+
+## Verifying Data Storage
+Once the application is running and you have made a request to `/price`, you can verify the data is saved in PostgreSQL using the following methods:
+
+### 1. Via Docker (If using Docker Compose)
+Access the database directly inside the running container:
+```bash
+# Find the container name
+docker ps
+
+# Enter the database
+docker exec -it <postgres_container_name> psql -U admin -d crypto-aggregator
+
+# Run the query
+SELECT * FROM prices;
+```
+
+### 2. Via Local Terminal (If running app locally)
+If you are running the app outside of Docker, use a local SQL client (psql, DBeaver, or pgAdmin) to connect to `localhost:5432`.
+
+
 
 ## Environment Variables
 - `DB_HOST`: Database hostname (default: `localhost`)
 - `DB_USER`: Database user (default: `postgres`)
-- `DB_PASSWORD`: Database password
-- `DB_NAME`: Database name
-- `PORT`: Service port (default: `3000`)
-
-## Manual Usage (Docker Only)
-If you already have a Postgres instance running:
-
-```bash
-docker build -t crypto-aggregator:v2 .
-docker run -p 8080:3000 --env DB_HOST=host.docker.internal crypto-aggregator:v2
-```
 
 ## API Endpoint
-`GET /price?coin=bitcoin`
+`GET /price?symbol=bitcoin`
 
 **Response:**
 ```json
