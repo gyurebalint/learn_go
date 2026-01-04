@@ -8,14 +8,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 )
 
-//TIP <p>To run your code, right-click the code and select <b>Run</b>.</p> <p>Alternatively, click
-// the <icon src="AllIcons.Actions.Execute"/> icon in the gutter and select the <b>Run</b> menu item from here.</p>
-
 func main() {
-	db, err := store.NewPostgres("postgres://admin:admin@localhost:5432/crypto-aggregator")
+	connString := getDbConnectionString()
+	db, err := store.NewPostgres(connString)
 	if err != nil {
 		panic(err)
 	}
@@ -57,4 +56,16 @@ func main() {
 	if err != nil {
 		fmt.Println("could not start server")
 	}
+}
+func getDbConnectionString() string {
+	host := os.Getenv("DB_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+	user := os.Getenv("DB_USER")
+	if user == "" {
+		user = "admin"
+	}
+
+	return fmt.Sprintf("postgres://%s:admin@%s:5432/crypto-aggregator", user, host)
 }

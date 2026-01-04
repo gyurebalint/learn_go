@@ -1,0 +1,26 @@
+graph TB
+    subgraph "Crypto-Dev Cluster (Your 'Computer')"
+        subgraph "Namespace: crypto-final (The 'Folder')"
+
+            %% The Aggregator Stack
+            subgraph "Pod: aggregator-pod-xyz (The 'VM')"
+                C1[("Container: crypto-app\n(Go Binary)\nListens on: :3000")]
+            end
+            
+            %% The Database Stack
+            subgraph "Pod: postgres-pod-abc (The 'VM')"
+                C2[("Container: postgres\n(DB Engine)\nListens on: :5432")]
+            end
+            
+            %% The Networking Glue
+            SVC[/"Service: postgres-db\n(Internal DNS Name)\nVirtual IP"/]
+        end
+    end
+
+    %% Relationships
+    SVC -.->|Points to| C2
+    C1 -->|Connects via DNS name 'postgres-db'| SVC
+
+    style C1 fill:#d4edda,stroke:#28a745,stroke-width:2px
+    style C2 fill:#cce5ff,stroke:#004085,stroke-width:2px
+    style SVC fill:#fff3cd,stroke:#856404,stroke-width:2px,stroke-dasharray: 5 5

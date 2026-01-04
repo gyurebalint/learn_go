@@ -1,0 +1,24 @@
+sequenceDiagram
+    participant Browser as Your Browser (Windows)
+    participant Tunnel as kubectl port-forward (localhost:8080)
+    participant AppPod as Aggregator Pod (:3000)
+    participant K8sDNS as K8s Internal DNS
+    participant DBService as Service: postgres-db
+    participant DBPod as Postgres Pod (:5432)
+
+    Note over Browser, AppPod: PHASE 1: Ingress (Getting In)
+    Browser->>Tunnel: HTTP GET localhost:8080/price?coin=btc
+    Tunnel->>AppPod: Teleports request directly to container port 3000
+
+    Note over AppPod, DBPod: PHASE 2: Internal Networking
+    AppPod->>K8sDNS: "Who is host 'postgres-db'?"
+    K8sDNS-->>AppPod: "It's IP 10.96.x.x (The Service IP)"
+    AppPod->>DBService: Open TCP Connection to Service IP on port 5432
+    DBService->>DBPod: Forward connection to actual Pod IP
+
+    Note over AppPod, DBPod: PHASE 3: Data Retrieval
+    AppPod->>DBPod: SQL Query: SELECT price FROM coins WHERE name='btc'
+    DBPod-->>AppPod: Return Data: {price: 50000}
+
+    Note over Browser, AppPod: PHASE 4: The Response
+    AppPod-->>Browser: JSON Response {"coin":"btc", "price":50000}

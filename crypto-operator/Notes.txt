@@ -1,0 +1,167 @@
+APP TO DEPLOY
+docker build -t crypto-aggregator:v2 .
+
+====================================================OPERATOR====================================================
+Check whether Deployment/Serive is already up and running. Only deploy when it is NOT.
+
+Port forward to forward request to pod in cluster ( we don't have a dedicated Service for crypto-aggregator so we need the exact POD name
+kubectl create ns crypto-final
+----------RESPONSE IN CONSOLE--------------------
+new namespace detected: crypto-final. Deploying...
+🐘 Spinning up Postgres in crypto-final...
+🚀 Deploying Aggregator v2 to crypto-final...
+----------RESPONSE IN CONSOLE--------------------
+
+kubectl delete ns crypto-final
+
+kubectl get all -n crypto-final
+
+kubectl delete pod -n crypto-final -l app=aggregator
+kubectl logs -n crypto-final -l app=aggregator
+
+PORT FORWARD FOR TEST
+kubectl port-forward -n <namespace> <pod-name> 8080:3000
+kubectl port-forward -n crypto-final replicaset.apps/crypto-aggregator-9f6c8d4ff 8080:3000
+
+====================================================TEST DB SAVED THE PRICE===================================================
+
+GET THE EXACT NAME OF THE DB POD: kubectl get pods -n crypto-final
+PS C:\Users\gyure> kubectl exec -it pod/postgres-db-597f9b46b4-bw78d -n crypto-final -- psql -U admin -d crypto-aggregator
+psql (15.15)
+Type "help" for help.
+
+crypto-aggregator=# \dt
+        List of relations
+ Schema |  Name  | Type  | Owner
+--------+--------+-------+-------
+ public | prices | table | admin
+(1 row)
+
+crypto-aggregator=# SELECT * FROM prices;
+ id |    exchange    | currency |   value   |           timestamp
+----+----------------+----------+-----------+-------------------------------
+  1 | BINANCE,KUCOIN | BTC      | 91413.775 | 2026-01-04 17:41:12.309+00
+  2 | BINANCE,KUCOIN | BTC      | 91403.495 | 2026-01-04 17:41:21.515002+00
+  3 | BINANCE,KUCOIN | ETH      |  3137.875 | 2026-01-04 17:55:04.89723+00
+(3 rows)
+
+
+===================================================YAML files we are creating programmatically============================================
+# -------------------
+# 1. The Database
+# -------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-db
+  namespace: crypto-final   # The namespace you created
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          value: "admin"
+        - name: POSTGRES_DB
+          value: "crypto-aggregator"
+        - name: POSTGRES_PASSWORD
+          value: "admin"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-db
+  namespace: crypto-final
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+
+---
+# -------------------
+# 2. The Aggregator (Your App)
+# -------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crypto-aggregator
+  namespace: crypto-final
+  labels:
+    app: aggregator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aggregator
+  template:
+    metadata:
+      labels:
+        app: aggregator
+    spec:
+      containers:
+      - name: aggregator
+        image: crypto-aggregator:v2
+        env:
+        - name: DB_HOST
+          value: "postgres-db"
+        - name: DB_USER
+          value: "admin"
+        - name: DB_NAME
+          value: "crypto-aggregator"
+        - name: DB_PASSWORD
+          value: "admin"
+
+
+====================================================DOCKER COMPOSE YML (I am familiar with this format)====================================================
+version: '3.8'
+
+services:
+  # Service 1: The Database 
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: postgres-db
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_DB=crypto-aggregator
+      - POSTGRES_PASSWORD=admin
+    ports:
+      - "5432:5432"
+    networks:
+      - crypto-net
+
+  # Service 2: The Aggregator 
+  crypto-aggregator:
+    build: .  # Builds from your current directory (Project 2)
+    container_name: crypto-aggregator
+    ports:
+      - "8080:3000" # Maps Windows 8080 -> Container 3000
+    environment:
+      - DB_HOST=postgres-db  # Docker uses the service name as the hostname
+      - DB_USER=admin
+      - DB_NAME=crypto-aggregator
+      - DB_PASSWORD=admin
+    depends_on:
+      - postgres-db
+    networks:
+      - crypto-net
+
+# Service 3: The Network (Replaces K8s Service discovery)
+networks:
+  crypto-net:
+    driver: bridge

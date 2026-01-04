@@ -62,10 +62,7 @@ func watchDeployments(clientset *kubernetes.Clientset) {
 			}
 
 			fmt.Printf("⚠️  SABOTAGE DETECTED! Re-deploying %s to %s...\n", deploy.Name, deploy.Namespace)
-			err = deployAggregator(clientset, deploy.Namespace)
-			if err != nil {
-				fmt.Printf("Failed to deploy: %v\n", err)
-			}
+			deployAggregator(clientset, deploy.Namespace)
 		}
 	}
 }
@@ -86,10 +83,7 @@ func watchNameSpaces(clientset *kubernetes.Clientset) {
 		case "ADDED":
 			if strings.HasPrefix(ns.Name, "crypto-") {
 				fmt.Printf("new namespace detected: %s. Deploying...\n", ns.Name)
-				err := deployAggregator(clientset, ns.Name)
-				if err != nil {
-					fmt.Printf("Failed to deploy: %v\n", err)
-				}
+				deployAggregator(clientset, ns.Name)
 			}
 		case "DELETED":
 			fmt.Printf("namespace %s was deleted. Cleaning up local", ns.Name)
@@ -101,18 +95,69 @@ func watchNameSpaces(clientset *kubernetes.Clientset) {
 	}
 }
 
-func deployAggregator(clientset *kubernetes.Clientset, name string) error {
-	_, err := clientset.AppsV1().Deployments(name).Get(context.Background(), "crypto-aggregator", metav1.GetOptions{})
+func deployPostgres(clientset *kubernetes.Clientset, nsName string) error {
+	//check if postgres deployment exists
+	_, err := clientset.AppsV1().Deployments(nsName).Get(context.TODO(), "postgres-db", metav1.GetOptions{})
 	if err == nil {
-		return nil
+		fmt.Println("🐘 Postgres Deployment already exists. Skipping creation.")
+	} else {
+		fmt.Printf("🐘 Spinning up Postgres in %s...\n", nsName)
+
+		dep := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "postgres-db"},
+			Spec: appsv1.DeploymentSpec{
+				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "postgres"}},
+				Template: v1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "postgres"}},
+					Spec: v1.PodSpec{
+						Containers: []v1.Container{{
+							Name:  "postgres",
+							Image: "postgres:15-alpine",
+							Env: []v1.EnvVar{
+								{Name: "POSTGRES_USER", Value: "admin"},
+								{Name: "POSTGRES_DB", Value: "crypto-aggregator"},
+								{Name: "POSTGRES_PASSWORD", Value: "admin"}, // In prod, use a Secret!
+							},
+							Ports: []v1.ContainerPort{{ContainerPort: 5432}},
+						}},
+					},
+				},
+			},
+		}
+		_, err := clientset.AppsV1().Deployments(nsName).Create(context.TODO(), dep, metav1.CreateOptions{})
+		if err != nil {
+			return err
+		}
 	}
 
-	fmt.Printf("🚀 Deploying Aggregator to %s...\n", name)
+	_, err = clientset.CoreV1().Services(nsName).Get(context.TODO(), "postgres-db", metav1.GetOptions{})
+	if err == nil {
+		fmt.Println("networks Postgres Service already exists. Skipping creation.")
+		return nil
+	}
+	
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "postgres-db"},
+		Spec: v1.ServiceSpec{
+			Selector: map[string]string{"app": "postgres"},
+			Ports:    []v1.ServicePort{{Port: 5432}},
+		},
+	}
+	_, err = clientset.CoreV1().Services(nsName).Create(context.TODO(), svc, metav1.CreateOptions{})
+	return err
+}
+
+func deployAggregator(clientset *kubernetes.Clientset, nsName string) {
+	err := deployPostgres(clientset, nsName)
+	if err != nil {
+		fmt.Printf("❌ Failed to deploy Postgres: %v\n", err)
+		return
+	}
+
+	fmt.Printf("🚀 Deploying Aggregator v2 to %s...\n", nsName)
 
 	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "crypto-aggregator",
-		},
+		ObjectMeta: metav1.ObjectMeta{Name: "crypto-aggregator"},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: int32Ptr(1),
 			Selector: &metav1.LabelSelector{
@@ -126,15 +171,24 @@ func deployAggregator(clientset *kubernetes.Clientset, name string) error {
 					Containers: []v1.Container{
 						{
 							Name:  "aggregator",
-							Image: "nginx",
+							Image: "crypto-aggregator:v2", // Using your new image
+							Env: []v1.EnvVar{
+								{Name: "DB_HOST", Value: "postgres-db"}, // Matches the PG Service name
+								{Name: "DB_USER", Value: "admin"},
+								{Name: "DB_NAME", Value: "crypto-aggregator"},
+								{Name: "DB_PASSWORD", Value: "admin"},
+							},
 						},
 					},
 				},
 			},
 		},
 	}
-	_, err = clientset.AppsV1().Deployments(name).Create(context.Background(), deployment, metav1.CreateOptions{})
-	return err
+
+	_, err = clientset.AppsV1().Deployments(nsName).Create(context.TODO(), deployment, metav1.CreateOptions{})
+	if err != nil {
+		fmt.Printf("❌ Failed to deploy Aggregator: %v\n", err)
+	}
 }
 
 func int32Ptr(i int32) *int32 { return &i }
