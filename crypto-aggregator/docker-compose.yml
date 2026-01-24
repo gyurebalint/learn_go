@@ -1,11 +1,25 @@
 services:
-  db:
+  app:
+    build: .
+    ports:
+      - "8080:3030"
+    environment:
+      - DB_HOST=postgres-db
+      - DB_USER=postgres
+      - DB_PASSWORD=password
+      - DB_NAME=crypto-aggregator
+      - REDIS_ADDR=redis-cache:6379
+    depends_on:
+      - postgres-db
+      - redis-cache
+
+  postgres-db:
     image: postgres:16-alpine
     container_name: postgres-crypto-aggregator
     environment:
-      POSTGRES_USER: "admin"
-      POSTGRES_PASSWORD: "admin"
-      POSTGRES_DB: "crypto-aggregator"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: crypto-aggregator
     ports:
       - "5432:5432"
     volumes:
@@ -15,3 +29,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  redis-cache:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
