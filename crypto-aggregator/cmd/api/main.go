@@ -17,14 +17,16 @@ func main() {
 	connString := getDbConnectionString()
 	db, err := store.NewPostgres(connString)
 	if err != nil {
-		log.Fatalf("Failed to initiate database: %v", err)
+		log.Printf("Warning: Could not connect to Postgres. Running in 'Stateless' mode. Error: %v", err)
+		db = nil // Explicitly set to nil
 	}
 	defer db.Close()
 
 	redisAddr := getRedisAddr()
 	rdb, err := store.NewRedis(redisAddr)
 	if err != nil {
-		log.Fatalf("failed to initialize redis: %v", err)
+		log.Printf("⚠️  Warning: Could not connect to Redis. Caching disabled.")
+		rdb = nil
 	}
 
 	binFetcher := &fetcher.BinanceFetcher{}

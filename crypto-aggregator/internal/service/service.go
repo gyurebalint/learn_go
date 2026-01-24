@@ -27,16 +27,17 @@ func NewPriceService(db store.Storage, f []fetcher.Fetcher, cache *store.RedisCl
 
 func (s *PriceService) GetPrice(ctx context.Context, symbol string) (float64, error) {
 	cacheKey := fmt.Sprintf("price:%s", symbol)
-	cachedVal, err := s.cache.Get(ctx, cacheKey)
-
-	if err == nil {
-		var price float64
-		fmt.Printf("Cache HIT for %s\n", symbol)
-		price, err = strconv.ParseFloat(cachedVal, 64)
-		if err != nil {
-			return 0.0, fmt.Errorf("failed to parse return cached value to price float64, err: %s", err)
+	if s.cache != nil {
+		cachedVal, err := s.cache.Get(ctx, cacheKey)
+		if err == nil {
+			var price float64
+			fmt.Printf("Cache HIT for %s\n", symbol)
+			price, err = strconv.ParseFloat(cachedVal, 64)
+			if err != nil {
+				return 0.0, fmt.Errorf("failed to parse return cached value to price float64, err: %s", err)
+			}
+			return price, nil
 		}
-		return price, nil
 	}
 
 	respChan := make(chan fetcher.Response, len(s.fetchers))
@@ -79,17 +80,20 @@ func (s *PriceService) GetPrice(ctx context.Context, symbol string) (float64, er
 		Value:     avg,
 		Currency:  symbol,
 		TimeStamp: time.Now()}
-	err = s.db.SavePrice(ctx, []store.Price{price})
-	if err != nil {
-		return 0, err
+	if s.db != nil {
+		err := s.db.SavePrice(ctx, []store.Price{price})
+		if err != nil {
+			return 0, err
+		}
 	}
 
-	err = s.cache.Set(ctx, cacheKey, price.Value, 60*time.Second)
-	if err != nil {
-		fmt.Printf("⚠️ Failed to write to Redis: %v\n", err)
+	if s.cache != nil {
+		err := s.cache.Set(ctx, cacheKey, price.Value, 60*time.Second)
+		if err != nil {
+			fmt.Printf("⚠️ Failed to write to Redis: %v\n", err)
+		}
+		fmt.Printf("💾 Saved to Redis: %s = %f\n", cacheKey, price.Value)
 	}
-	fmt.Printf("💾 Saved to Redis: %s = %f\n", cacheKey, price.Value)
-
 	return price.Value, nil
 }
 
